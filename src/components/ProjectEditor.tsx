@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AIChatPanel } from "@/components/AIChatPanel";
 import { PROJECT_STARTER_CODE } from "@/lib/project-template";
 import {
   ArrowDownToLine,
@@ -26,11 +27,9 @@ import {
   Plus,
   RefreshCcw,
   Save,
-  Send,
   Settings2,
   Sparkles,
   Trash2,
-  WandSparkles,
   X,
 } from "lucide-react";
 
@@ -46,7 +45,7 @@ type Project = {
   requirements: Requirement[];
   checkpoints: Checkpoint[];
 };
-type Provider = { id: "openai" | "anthropic" | "ollama"; configured: boolean };
+type Provider = { id: "openai" | "anthropic" | "ollama" | "nvidia"; configured: boolean };
 type ResponseData<T> = T & { error?: string };
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
@@ -137,10 +136,9 @@ export default function ProjectEditor({ projectId }: { projectId: string }) {
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"editor" | "preview">("editor");
   const [rightPanel, setRightPanel] = useState<"requirements" | "history">("requirements");
-  const [instruction, setInstruction] = useState("");
   const [providers, setProviders] = useState<Provider[]>([]);
   const [providerError, setProviderError] = useState("");
-  const [provider, setProvider] = useState<"openai" | "anthropic" | "ollama">("openai");
+  const [provider, setProvider] = useState<"openai" | "anthropic" | "ollama" | "nvidia">("nvidia");
   const [previewCode, setPreviewCode] = useState("");
   const [previewError, setPreviewError] = useState("");
   const [newRequirement, setNewRequirement] = useState("");
@@ -175,7 +173,7 @@ export default function ProjectEditor({ projectId }: { projectId: string }) {
     api<{ providers: Provider[]; defaultProvider: string }>("/api/ai/providers")
       .then(({ providers: available, defaultProvider }) => {
         setProviders(available);
-        if (defaultProvider === "openai" || defaultProvider === "anthropic" || defaultProvider === "ollama") setProvider(defaultProvider);
+        if (defaultProvider === "openai" || defaultProvider === "anthropic" || defaultProvider === "ollama" || defaultProvider === "nvidia") setProvider(defaultProvider);
       })
       .catch((reason: unknown) => {
         if (active) setProviderError(reason instanceof Error ? reason.message : "Unable to load AI provider configuration");
@@ -230,27 +228,12 @@ export default function ProjectEditor({ projectId }: { projectId: string }) {
     }
   }
 
-  async function generate() {
-    if (!instruction.trim()) return;
-    setBusy(true);
-    setError("");
-    try {
-      const result = await api<{ code: string }>(`/api/projects/${projectId}/ai`, {
-        method: "POST",
-        body: JSON.stringify({ instruction, provider, currentCode: code }),
-      });
-      setCode(result.code);
-      setInstruction("");
-      setShowAI(false);
-      await loadProject();
-      const previewReady = await buildPreview(result.code);
-      setNotice(previewReady ? "App updated and preview is ready" : "App saved; check the preview error");
-      window.setTimeout(() => setNotice(""), 3000);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "AI request failed");
-    } finally {
-      setBusy(false);
-    }
+  async function handleAppGenerated(generatedCode: string) {
+    setCode(generatedCode);
+    await loadProject();
+    const previewReady = await buildPreview(generatedCode);
+    setNotice(previewReady ? "App aggiornata e anteprima pronta" : "App salvata; controlla l'errore dell'anteprima");
+    window.setTimeout(() => setNotice(""), 3000);
   }
 
   async function addRequirement(event: React.FormEvent) {
@@ -351,8 +334,6 @@ export default function ProjectEditor({ projectId }: { projectId: string }) {
     }
   }
 
-  const configuredProvider = providers.find((item) => item.id === provider)?.configured ?? false;
-
   if (loading) return <div className="grid min-h-screen place-items-center"><LoaderCircle className="animate-spin text-[#214f40]" /></div>;
   if (!project) return <main className="mx-auto max-w-lg p-8 text-center"><LogoMark /><h1 className="mt-4 text-xl font-semibold">Project unavailable</h1><p className="mt-2 text-sm text-[#78827e]">{error || "This project could not be found."}</p><Link className="mt-5 inline-flex items-center gap-2 text-sm text-[#315844]" href="/"><ArrowLeft size={15} /> Back to projects</Link></main>;
 
@@ -395,19 +376,18 @@ export default function ProjectEditor({ projectId }: { projectId: string }) {
           {error && <div className="px-3 pt-2 sm:px-5"><Alert onClose={() => setError("")}>{error}</Alert></div>}
           {notice && <div role="status" className="absolute left-1/2 top-[70px] z-30 -translate-x-1/2 rounded-full bg-[#214f40] px-4 py-2 text-xs text-white shadow-lg">{notice}</div>}
 
-          {showAI && <div className="border-b border-[#dfe7df] bg-[#f2f6f2] px-3 py-3 sm:px-5">
-            <div className="mx-auto max-w-4xl">
-              <div className="mb-2 flex items-center justify-between"><div className="flex items-center gap-2 text-xs font-semibold text-[#385a45]"><WandSparkles size={15} /> Build with Copilot</div><button onClick={() => setShowAI(false)} className="rounded p-1 text-[#88938c] hover:bg-white"><X size={14} /></button></div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <textarea value={instruction} onChange={(event) => setInstruction(event.target.value)} rows={2} maxLength={8000} className="min-h-10 flex-1 resize-y rounded-xl border border-[#dce5dc] bg-white px-3 py-2 text-xs leading-5 focus:border-[#7c9b83] focus:ring-[#7c9b83]/10" placeholder="Describe the app to create or a change to make..." />
-                <div className="flex gap-2 sm:flex-col">
-                  <select value={provider} onChange={(event) => setProvider(event.target.value as "openai" | "anthropic" | "ollama")} className="h-9 min-w-[125px] rounded-lg border border-[#dce5dc] bg-white px-2 text-[11px] focus:border-[#7c9b83] focus:ring-[#7c9b83]/10"><option value="ollama">Ollama · local</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select>
-                  <button disabled={busy || !instruction.trim() || !configuredProvider} onClick={() => void generate()} title={!configuredProvider ? `${provider} API key is not configured on the server` : ""} className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#214f40] px-3 text-xs font-medium text-white disabled:bg-[#9aada0] sm:flex-none">{busy ? <LoaderCircle size={13} className="animate-spin" /> : <Send size={13} />}{busy ? "Building..." : "Build app"}</button>
-                </div>
-              </div>
-              {providerError ? <p role="alert" className="mt-2 text-[10px] text-red-700">{providerError}</p> : !configuredProvider && <p className="mt-2 text-[10px] text-[#87918b]">{provider === "ollama" ? "Start Ollama locally to enable generation; no API key is needed." : `Configure ${provider === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"} on the server. Keys are never sent to the browser.`}</p>}
-            </div>
-          </div>}
+          <div className={showAI ? "" : "hidden"}>
+            <AIChatPanel
+              projectId={projectId}
+              currentCode={code}
+              provider={provider}
+              onProviderChange={setProvider}
+              providers={providers}
+              providerError={providerError}
+              onAppGenerated={handleAppGenerated}
+              onClose={() => setShowAI(false)}
+            />
+          </div>
 
           <div className="min-h-0 flex-1 bg-white">
             <div className={`${tab === "editor" ? "block" : "hidden"} h-full`}>

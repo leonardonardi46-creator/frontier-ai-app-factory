@@ -25,30 +25,35 @@ For iterative schema changes, use `npm run db:migrate -- --name describe_change`
 
 ## Configuration
 
-See [`.env.example`](./.env.example). `DATABASE_URL` is required. The default AI provider is local Ollama; install Ollama and pull the configured model to enable it:
+See [`.env.example`](./.env.example). `DATABASE_URL` is required. The default AI provider is NVIDIA NIM; configure its API key on the server:
 
 ```dotenv
-AI_PROVIDER="ollama"
-OLLAMA_BASE_URL="http://127.0.0.1:11434"
-OLLAMA_MODEL="qwen2.5-coder:0.5b"
+AI_PROVIDER="nvidia"
+NVIDIA_API_KEY="..."
+NVIDIA_MODEL="google/gemma-4-31b-it"
+NVIDIA_CHAT_MODEL="google/gemma-4-31b-it"
+NVIDIA_VISION_MODEL="moonshotai/kimi-k3.1-pro"
+NVIDIA_IMAGE_MODEL="stabilityai/stable-diffusion-3-medium"
 ```
 
-```bash
-ollama pull qwen2.5-coder:0.5b
-```
-
-If Ollama is not already running as a service, start it in a separate terminal with `ollama serve`. Ollama runs on the application server and requires no API key. Alternatively, configure a server-side cloud provider:
+The NVIDIA provider uses the OpenAI-compatible NVIDIA NIM chat-completions API. `NVIDIA_MODEL` selects the app-builder model; `NVIDIA_CHAT_MODEL` and `NVIDIA_VISION_MODEL` optionally select general chat models with text and image input. `NVIDIA_IMAGE_MODEL` selects the text-to-image NIM. Use model IDs enabled for your NVIDIA account. Image generation and model access may have separate quotas or terms.
 
 ```dotenv
-AI_PROVIDER="openai"
-OPENAI_API_KEY="..."
-# or:
+OPENAI_API_KEY="..."      # or
 ANTHROPIC_API_KEY="..."
 ```
 
-Cloud provider keys are read only by server modules and are never returned to the browser. The provider and model can be selected per request; model names can be overridden with `OPENAI_MODEL`, `ANTHROPIC_MODEL`, and `OLLAMA_MODEL`. Cloud AI calls incur charges with the selected provider. Local Ollama has no provider token quota but is limited by the server's hardware.
+Cloud provider keys are read only by server modules and are never returned to the browser. The app-builder provider can be selected in the editor; model names can be overridden with `OPENAI_MODEL`, `ANTHROPIC_MODEL`, and `OLLAMA_MODEL`. Cloud AI usage is subject to each provider's current quotas and pricing; check NVIDIA's limits for your account.
 
-The project editor's Copilot can create an app from a description or update the current app from a follow-up request. Generated TSX is compiled before it is saved; if compilation fails, the provider gets one chance to repair it. A successful build automatically opens the isolated preview. The default 0.5B Ollama model uses a 4K context and works on CPU without a GPU, but is less capable than larger models. Choose a larger model with `OLLAMA_MODEL` only when the server has enough memory.
+The editor's AI panel has separate **Build app** and **AI chat** tabs. The builder creates or updates the project and compiles the result before opening the preview; the general chat answers questions without changing project code. Both tabs can upload files and generate images using NVIDIA.
+
+### Private chat attachments
+
+Create a **private Vercel Blob store** and connect it to this Vercel project. Vercel supplies the Blob environment credentials, including `BLOB_WEBHOOK_PUBLIC_KEY`; local development can use `vercel env pull` after enabling the Development environment on the store. Uploads go directly from the browser to Blob, are private, and expire after 30 days. Vercel Blob has a 5 TB per-file maximum, not unlimited storage; usage is subject to the store's quota and pricing.
+
+The app extracts text from text/code files and PDFs, and can send JPEG, PNG, or WebP images to the NVIDIA vision model. File uploads of other types are accepted but their contents are not interpreted. Scanned PDFs need OCR; images larger than 4 MiB each or 8 MiB total are stored but omitted from AI requests. NVIDIA also imposes its own context and request limits.
+
+To use Ollama instead, set `AI_PROVIDER="ollama"`, configure `OLLAMA_BASE_URL` and `OLLAMA_MODEL`, and make sure Ollama is running and reachable from the application server.
 
 GitHub publishing asks the user for a personal access token for that one request. The token is sent to the server over HTTPS, used to create a repository and upload `App.tsx`, and is neither stored nor logged by this application. Use a short-lived token with only the required repository permissions.
 
@@ -59,7 +64,8 @@ GitHub publishing asks the user for a personal access token for that one request
 - PostgreSQL/Prisma schema and committed initial SQL migration.
 - Authenticated project and requirement CRUD with per-owner access checks (admins can access all projects).
 - Monaco TypeScript/TSX editor, server-persisted code, transactional checkpoints, and checkpoint restore.
-- Explicit local Ollama, OpenAI Chat Completions, and Anthropic Messages provider adapters. An unavailable or unconfigured provider returns `503`; no fake generation response is supplied.
+- Explicit local Ollama, OpenAI Chat Completions, Anthropic Messages, and NVIDIA NIM providers, with app-building and general-chat experiences plus NVIDIA image generation.
+- Authenticated private Vercel Blob uploads for chat attachments, with format-aware text/PDF/image handling and expiring storage.
 - Preview compilation with esbuild in a server route, rendered inside an iframe using `sandbox="allow-scripts"` without same-origin access. Its Content Security Policy blocks network connections, forms, external assets, and other resource types.
 - Authenticated ZIP export and GitHub repository creation/source upload.
 - Focused unit tests plus GitHub Actions checks for migrations, lint, type-check, tests, and production build.
@@ -86,7 +92,7 @@ For a small personal demo, the app can run on Vercel Hobby with a Neon Free Post
 3. Set the Vercel build command to `npm run db:deploy && npm run build` so committed migrations are applied before each deployment.
 4. After the first deployment, set `APP_URL` to the app's canonical HTTPS URL and redeploy.
 
-This deployment makes the app and PostgreSQL data reachable online, but it does not host Ollama. For AI generation, `OLLAMA_BASE_URL` must point to an Ollama server that is reachable from Vercel; `http://127.0.0.1:11434` would refer to the Vercel instance, not a personal computer. Do not expose an Ollama server publicly without appropriate access controls.
+This deployment makes the app and PostgreSQL data reachable online. Add `NVIDIA_API_KEY` to the Vercel project's environment variables to enable NVIDIA chat and image generation. Create and connect a **private Vercel Blob store** to enable chat uploads. Do not put the key in client-side code or commit it to the repository.
 
 ## Release and other deployments
 

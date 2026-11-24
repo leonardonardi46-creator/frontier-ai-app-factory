@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser, hasRole, isSameOrigin } from "@/lib/auth";
-import { createAIProvider, isOllamaAvailable } from "@/lib/ai/provider";
+import { loadAttachments } from "@/lib/ai/attachments";
+import { AIProviderError, createAIProvider, isOllamaAvailable } from "@/lib/ai/provider";
 import { db } from "@/lib/db";
 import { apiError, forbidden, readJson, unauthorized } from "@/lib/http";
 import { compilePreview, PreviewCompileError } from "@/lib/preview";
@@ -21,8 +22,8 @@ export async function POST(request: Request, { params }: RouteContext) {
     });
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
-    const providerName = input.provider ?? process.env.AI_PROVIDER ?? "openai";
-    if (providerName !== "openai" && providerName !== "anthropic" && providerName !== "ollama") {
+    const providerName = input.provider ?? process.env.AI_PROVIDER ?? "nvidia";
+    if (providerName !== "openai" && providerName !== "anthropic" && providerName !== "ollama" && providerName !== "nvidia") {
       return NextResponse.json({ error: "Unsupported AI provider" }, { status: 400 });
     }
     if (providerName === "ollama" && !(await isOllamaAvailable())) {
@@ -31,18 +32,33 @@ export async function POST(request: Request, { params }: RouteContext) {
         { status: 503 },
       );
     }
-    const key = providerName === "openai" ? process.env.OPENAI_API_KEY : process.env.ANTHROPIC_API_KEY;
+    const keyName = providerName === "openai"
+      ? "OPENAI_API_KEY"
+      : providerName === "anthropic"
+        ? "ANTHROPIC_API_KEY"
+        : "NVIDIA_API_KEY";
+    const key = process.env[keyName];
     if (providerName !== "ollama" && !key) {
       return NextResponse.json(
-        { error: `${providerName === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"} is not configured` },
+        { error: `${keyName} is not configured` },
         { status: 503 },
       );
     }
 
+    const attachments = await loadAttachments(projectId, input.attachments);
+    if (attachments.images.length && providerName !== "nvidia") {
+      return NextResponse.json(
+        { error: "Image attachments in the app builder require the NVIDIA provider" },
+        { status: 400 },
+      );
+    }
     const generationInput = {
       instruction: input.instruction,
       currentCode: input.currentCode ?? project.currentCode,
       requirements: project.requirements,
+      history: input.history,
+      attachmentContext: attachments.context,
+      images: attachments.images,
     };
     const provider = createAIProvider(providerName);
     let code = await provider.generate(generationInput);
@@ -90,6 +106,9 @@ export async function POST(request: Request, { params }: RouteContext) {
     });
     return NextResponse.json({ project: updatedProject, code, provider: providerName });
   } catch (error) {
+    if (error instanceof AIProviderError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return apiError(error);
   }
 }

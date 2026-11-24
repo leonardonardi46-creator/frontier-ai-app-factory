@@ -34,11 +34,17 @@ Users can access only their own projects; the `ADMIN` role can access all projec
 | --- | --- | --- | --- |
 | `PATCH` | `/api/projects/:projectId/code` | `{ "code": "...", "label"?: "..." }` | Atomically updates current code and creates a checkpoint. |
 | `POST` | `/api/checkpoints/:checkpointId/restore` | — | Restores a checkpoint and creates a new restore checkpoint. |
-| `GET` | `/api/ai/providers` | — | Returns provider identifiers and availability booleans, never secrets. Ollama availability checks the local server. |
-| `POST` | `/api/projects/:projectId/ai` | `{ "instruction": "...", "provider"?: "ollama" \| "openai" \| "anthropic", "currentCode"?: "..." }` | Calls the selected provider with the supplied editor source (or saved source), compiles the returned TSX, and creates a checkpoint only after a successful compile. One repair attempt is made for compile errors; an unrepairable result returns `422`. Unavailable/unconfigured provider returns `503`. |
+| `GET` | `/api/ai/providers` | — | Returns provider identifiers and availability booleans, never secrets. Ollama availability checks the local server; cloud providers report whether their server-side key is configured. |
+| `POST` | `/api/projects/:projectId/ai` | `{ "instruction": "...", "provider"?: "ollama" \| "openai" \| "anthropic" \| "nvidia", "currentCode"?: "...", "history"?: [...], "attachments"?: [...] }` | Calls the selected provider with the supplied editor source, prior chat, and private attachments, compiles the returned TSX, and creates a checkpoint only after a successful compile. One repair attempt is made for compile errors; an unrepairable result returns `422`. Unavailable/unconfigured provider returns `503`. |
+| `POST` | `/api/projects/:projectId/ai/chat` | `{ "messages": [{ "role": "user" \| "assistant", "content": "..." }], "attachments"?: [...] }` | Calls NVIDIA general chat without modifying project code. The latest message must be from the user; private attachments are checked against project access before reading. |
+| `POST` | `/api/projects/:projectId/ai/image` | `{ "prompt": "..." }` | Generates a JPEG with the configured NVIDIA NIM image model and returns it as a data URL. Requires the NVIDIA key and access to the selected image model. |
+| `POST` | `/api/projects/:projectId/ai/files` | Vercel Blob client-upload protocol | Authenticates project ownership and issues a short-lived private Blob upload URL, including multipart uploads. Blob store access must be configured. |
+| `DELETE` | `/api/projects/:projectId/ai/files` | `{ "pathname": "...", "name": "..." }` | Deletes an authenticated project's private chat attachment. |
 | `POST` | `/api/projects/:projectId/preview` | `{ "code": "TSX source" }` | Authenticated esbuild compilation for the isolated preview. Rejects non-React package imports. |
 
-The AI call returns code as content; review it before exporting. Cloud provider credentials remain server-side. Local Ollama uses `OLLAMA_BASE_URL` and `OLLAMA_MODEL` and does not require an API key. The editor automatically builds the isolated preview after a successful generation.
+The AI call returns code as content; review it before exporting. Cloud provider credentials remain server-side. NVIDIA uses the NVIDIA NIM chat-completions API with `NVIDIA_API_KEY`; text, vision, and image models are configurable with `NVIDIA_MODEL`, `NVIDIA_CHAT_MODEL`, `NVIDIA_VISION_MODEL`, and `NVIDIA_IMAGE_MODEL`. Ollama uses `OLLAMA_BASE_URL` and `OLLAMA_MODEL` and does not require an API key. The editor automatically builds the isolated preview after a successful app generation.
+
+Chat attachments are uploaded to a private Vercel Blob store and automatically expire after 30 days. Blob supports files up to 5 TB, but NVIDIA request/context limits still apply. Text/code, PDFs, and JPEG/PNG/WebP are parsed or sent to the model; images over 4 MiB each or 8 MiB total, and unsupported formats, are stored but not interpreted.
 
 ## Exports
 

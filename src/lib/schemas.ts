@@ -34,8 +34,29 @@ export const codeUpdateSchema = z.object({
   label: z.string().trim().min(1).max(120).optional().default("Manual checkpoint"),
 });
 
+const chatTurnSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().trim().min(1).max(8000),
+});
+
+export const attachmentReferenceSchema = z.object({
+  pathname: z.string().min(1).max(1024),
+  name: z.string().trim().min(1).max(255),
+});
+
 export const generateSchema = z.object({
   instruction: z.string().trim().min(1).max(8000),
-  provider: z.enum(["openai", "anthropic", "ollama"]).optional(),
+  provider: z.enum(["openai", "anthropic", "ollama", "nvidia"]).optional(),
   currentCode: z.string().max(500_000).optional(),
+  history: z.array(chatTurnSchema).max(20).optional().default([]),
+  attachments: z.array(attachmentReferenceSchema).max(10).optional().default([]),
+});
+
+export const aiChatSchema = z.object({
+  messages: z.array(chatTurnSchema).min(1).max(20),
+  attachments: z.array(attachmentReferenceSchema).max(10).optional().default([]),
+});
+
+export const imageGenerationSchema = z.object({
+  prompt: z.string().trim().min(1).max(10_000),
 });
